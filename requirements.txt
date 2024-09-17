@@ -3,3 +3,6 @@ pandas
 altair
 supabase
 pydeck
+python-dotenv
+scipy
+numpy
