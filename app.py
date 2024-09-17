@@ -1,17 +1,40 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from supabase_client import init_supabase
+from supabase_client import init_supabase, sign_in, sign_out, get_user
 from scipy import stats
 import numpy as np
 from datetime import datetime, timedelta
 import pydeck as pdk
 
-def main():
-    st.title("Battery Status and Boat Positions Dashboard")
+# Initialize Supabase client
+supabase = init_supabase()
 
-    # Initialize Supabase client
-    supabase = init_supabase()
+def login():
+    st.title("Login")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        try:
+            response = sign_in(supabase, email, password)
+            st.session_state.user = response.user
+            st.success("Logged in successfully!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Login failed: {str(e)}")
+
+def logout():
+    sign_out(supabase)
+    st.session_state.user = None
+    st.rerun()
+
+def main():
+    if 'user' not in st.session_state or st.session_state.user is None:
+        login()
+        return
+
+    st.title("Battery Status and Boat Positions Dashboard")
+    st.sidebar.button("Logout", on_click=logout)
 
     # Date range selection
     st.sidebar.header("Date Range Selection")
