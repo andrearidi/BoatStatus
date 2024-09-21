@@ -1,5 +1,12 @@
 import streamlit as st
-from supabase_client import init_supabase, sign_in, sign_out, get_user
+import time
+
+# Force reload of supabase_client
+import importlib
+import supabase_client
+importlib.reload(supabase_client)
+
+from supabase_client import init_supabase
 
 # Initialize Supabase client
 supabase = init_supabase()
@@ -10,7 +17,7 @@ def login():
     password = st.text_input("Password", type="password")
     if st.button("Login"):
         try:
-            response = sign_in(supabase, email, password)
+            response = supabase.sign_in(email, password)
             st.session_state.user = response.user
             st.success("Logged in successfully!")
             st.rerun()
@@ -18,19 +25,21 @@ def login():
             st.error(f"Login failed: {str(e)}")
 
 def logout():
-    sign_out(supabase)
+    supabase.sign_out()
     st.session_state.user = None
     st.rerun()
 
 def main():
+    st.write(f"Last reload: {time.time()}")  # Add this line to show when the app was last reloaded
+    
     if 'user' not in st.session_state or st.session_state.user is None:
         login()
         return
 
-    st.title("Battery Status and Boat Positions Dashboard")
+    st.title("Battery Status, Boat Positions, and Bilge Pump Dashboard")
     st.sidebar.button("Logout", on_click=logout)
 
-    st.write("Welcome to the Battery Status and Boat Positions Dashboard!")
+    st.write("Welcome to the Dashboard!")
     st.write("Please select a page from the sidebar to view specific information.")
 
 if __name__ == '__main__':
