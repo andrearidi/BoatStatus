@@ -2,9 +2,12 @@ import streamlit as st
 import pandas as pd
 import pydeck as pdk
 from datetime import datetime, timedelta
-from app import supabase
+from supabase_client import init_supabase
 
 st.title("Boat Positions")
+
+# Initialize Supabase client
+supabase = init_supabase()
 
 # Date range selection
 st.sidebar.header("Date Range Selection")
@@ -61,9 +64,10 @@ if start_date > end_date:
 # Fetch data from the BoatPositions table
 def load_boat_positions(start_date, end_date):
     try:
-        response = supabase.table('BoatPositions').select('*').gte('created_at', start_date.isoformat()).lte('created_at', (end_date + timedelta(days=1)).isoformat()).execute()
-        data = response.data  # Extract data from the response
-        return pd.DataFrame(data)
+        response = supabase.fetch_boat_positions()
+        df = pd.DataFrame(response)
+        df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
+        return df[(df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)]
     except Exception as e:
         st.error(f"Error fetching boat positions: {str(e)}")
         return pd.DataFrame()
@@ -74,7 +78,6 @@ if st.session_state.show_today or st.session_state.apply_custom_range or st.sess
 
     if not df_boat_positions.empty and 'Lat' in df_boat_positions.columns and 'Long' in df_boat_positions.columns:
         # Sort boat positions by time
-        df_boat_positions['created_at'] = pd.to_datetime(df_boat_positions['created_at'], utc=True)
         df_boat_positions = df_boat_positions.sort_values('created_at')
 
         # Prepare data for map

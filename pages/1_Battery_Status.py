@@ -3,9 +3,12 @@ import pandas as pd
 import altair as alt
 from scipy import stats
 from datetime import datetime, timedelta
-from app import supabase
+from supabase_client import init_supabase
 
 st.title("Battery Status")
+
+# Initialize Supabase client
+supabase = init_supabase()
 
 # Date range selection
 st.sidebar.header("Date Range Selection")
@@ -62,9 +65,10 @@ if start_date > end_date:
 # Fetch data from the BatteryStatus table
 def load_battery_data(start_date, end_date):
     try:
-        response = supabase.table('BatteryStatus').select('*').gte('created_at', start_date.isoformat()).lte('created_at', (end_date + timedelta(days=1)).isoformat()).execute()
-        data = response.data  # Extract data from the response
-        return pd.DataFrame(data)
+        response = supabase.fetch_battery_data()
+        df = pd.DataFrame(response)
+        df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
+        return df[(df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)]
     except Exception as e:
         st.error(f"Error fetching battery data: {str(e)}")
         return pd.DataFrame()
@@ -75,8 +79,7 @@ if st.session_state.show_today or st.session_state.apply_custom_range or st.sess
 
     # Plot Voltage over time using Altair
     if not df_battery.empty and 'Voltage' in df_battery.columns and 'created_at' in df_battery.columns:
-        # Make created_at timezone-aware (assuming data is in UTC)
-        df_battery['created_at'] = pd.to_datetime(df_battery['created_at'], utc=True)
+        # Sort values by created_at
         df_battery.sort_values('created_at', inplace=True)
 
         # Compute min and max voltage
