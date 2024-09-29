@@ -1,6 +1,7 @@
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -21,9 +22,22 @@ class SupabaseClient:
 
     def fetch_battery_data(self):
         try:
-            response = self.client.from_('BatteryStatus').select('*').execute()
-            print(f"Battery data fetched: {len(response.data)} records")
-            return response.data
+            all_data = []
+            page = 1
+            page_size = 1000  # Adjust this value based on your needs
+
+            while True:
+                response = self.client.from_('BatteryStatus').select('*').range((page - 1) * page_size, page * page_size - 1).execute()
+                data = response.data
+                all_data.extend(data)
+
+                if len(data) < page_size:
+                    break
+
+                page += 1
+
+            print(f"Battery data fetched: {len(all_data)} records")
+            return all_data
         except Exception as e:
             print(f"Error fetching battery data: {str(e)}")
             return []

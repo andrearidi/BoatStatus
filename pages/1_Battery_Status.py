@@ -4,6 +4,7 @@ import altair as alt
 from scipy import stats
 from datetime import datetime, timedelta
 from supabase_client import init_supabase
+import pytz
 
 st.title("Battery Status")
 
@@ -12,23 +13,24 @@ supabase = init_supabase()
 
 # Date range selection
 st.sidebar.header("Date Range Selection")
-today = datetime.now().date()
+now = datetime.now(pytz.utc)
+today = now.date()
 
 # Initialize session state
-if 'show_today' not in st.session_state:
-    st.session_state.show_today = False
+if 'show_recent' not in st.session_state:
+    st.session_state.show_recent = True
 if 'apply_custom_range' not in st.session_state:
     st.session_state.apply_custom_range = False
 if 'start_date' not in st.session_state:
-    st.session_state.start_date = today - timedelta(days=7)
+    st.session_state.start_date = now - timedelta(hours=24)
 if 'end_date' not in st.session_state:
-    st.session_state.end_date = today
+    st.session_state.end_date = now
 if 'first_load' not in st.session_state:
     st.session_state.first_load = True
 
-# Show Today's Data button
-if st.sidebar.button("Show Today's Data"):
-    st.session_state.show_today = True
+# Show Recent Data button
+if st.sidebar.button("Show Recent Data (Last 24 Hours)"):
+    st.session_state.show_recent = True
     st.session_state.apply_custom_range = False
     st.session_state.first_load = False
 
@@ -39,22 +41,24 @@ end_date = st.sidebar.date_input("End Date", st.session_state.end_date)
 # Apply Custom Range button
 if st.sidebar.button("Apply Custom Range"):
     st.session_state.apply_custom_range = True
-    st.session_state.show_today = False
+    st.session_state.show_recent = False
     st.session_state.first_load = False
-    st.session_state.start_date = start_date
-    st.session_state.end_date = end_date
+    st.session_state.start_date = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=pytz.utc)
+    st.session_state.end_date = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=pytz.utc)
 
 # Set date range based on the current state
-if st.session_state.show_today:
-    start_date = today
-    end_date = today
-    st.sidebar.info("Showing today's data. Use the date inputs and 'Apply Custom Range' to select a custom range.")
+if st.session_state.show_recent:
+    start_date = now - timedelta(hours=24)
+    end_date = now
+    st.sidebar.info("Showing last 24 hours of data. Use the date inputs and 'Apply Custom Range' to select a custom range.")
 elif st.session_state.apply_custom_range:
     start_date = st.session_state.start_date
     end_date = st.session_state.end_date
-    st.sidebar.info(f"Showing data from {start_date} to {end_date}. Click 'Show Today's Data' to reset.")
+    st.sidebar.info(f"Showing data from {start_date.strftime('%Y-%m-%d %H:%M:%S')} to {end_date.strftime('%Y-%m-%d %H:%M:%S')} UTC. Click 'Show Recent Data' to reset.")
 elif st.session_state.first_load:
-    st.sidebar.info(f"Showing data for the last week by default. Use the date inputs and 'Apply Custom Range' to select a custom range.")
+    start_date = now - timedelta(hours=24)
+    end_date = now
+    st.sidebar.info(f"Showing data for the last 24 hours by default. Use the date inputs and 'Apply Custom Range' to select a custom range.")
 else:
     st.sidebar.info("Select a date range and click 'Apply Custom Range' to update the data.")
 
@@ -68,13 +72,13 @@ def load_battery_data(start_date, end_date):
         response = supabase.fetch_battery_data()
         df = pd.DataFrame(response)
         df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
-        return df[(df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)]
+        return df[(df['created_at'] >= start_date) & (df['created_at'] <= end_date)]
     except Exception as e:
         st.error(f"Error fetching battery data: {str(e)}")
         return pd.DataFrame()
 
 # Load data for the selected range or on first load
-if st.session_state.show_today or st.session_state.apply_custom_range or st.session_state.first_load:
+if st.session_state.show_recent or st.session_state.apply_custom_range or st.session_state.first_load:
     df_battery = load_battery_data(start_date, end_date)
 
     # Plot Voltage over time using Altair
@@ -103,13 +107,29 @@ if st.session_state.show_today or st.session_state.apply_custom_range or st.sess
         df_battery['Voltage'] = df_battery['Voltage'].interpolate(method='linear')
 
         # Create Altair chart with dynamic y-axis limits and custom X-axis label
-        chart = alt.Chart(df_battery).mark_line().encode(
-            x=alt.X('created_at:T', axis=alt.Axis(title='Time')),
+        line = alt.Chart(df_battery).mark_line().encode(
+            x=alt.X('created_at:T', axis=alt.Axis(title='Time (UTC)', format='%Y-%m-%d %H:%M:%S')),
             y=alt.Y('Voltage:Q', scale=alt.Scale(domain=[y_min, y_max])),
-            tooltip=['created_at', 'Voltage']
-        ).properties(
-            title='Voltage Over Time (Auto-scaled Y-axis)'
+            tooltip=[
+                alt.Tooltip('created_at:T', title='Time (UTC)', format='%Y-%m-%d %H:%M:%S'),
+                alt.Tooltip('Voltage:Q', title='Voltage', format='.2f')
+            ]
         )
+
+        # Add points to highlight individual data points
+        points = alt.Chart(df_battery).mark_circle(size=60).encode(
+            x='created_at:T',
+            y='Voltage:Q',
+            tooltip=[
+                alt.Tooltip('created_at:T', title='Time (UTC)', format='%Y-%m-%d %H:%M:%S'),
+                alt.Tooltip('Voltage:Q', title='Voltage', format='.2f')
+            ]
+        )
+
+        # Combine line and points
+        chart = (line + points).properties(
+            title='Voltage Over Time (Auto-scaled Y-axis)'
+        ).interactive()
 
         st.altair_chart(chart, use_container_width=True)
 
@@ -124,7 +144,7 @@ if st.session_state.show_today or st.session_state.apply_custom_range or st.sess
         def predict_time_for_voltage(target_voltage):
             if slope != 0:
                 target_timestamp = (target_voltage - intercept) / slope
-                return pd.to_datetime(target_timestamp, unit='s', utc=True)  # Ensure timezone-aware
+                return pd.to_datetime(target_timestamp, unit='s', utc=True)
             else:
                 return None
 
@@ -140,10 +160,14 @@ if st.session_state.show_today or st.session_state.apply_custom_range or st.sess
             st.info(f"It will take approximately {days_to_reach_12v:.2f} days to reach 12V.")
         else:
             st.warning("Insufficient data or voltage will not reach 12V based on current trend.")
+
+        # Display the most recent voltage reading
+        latest_reading = df_battery.iloc[-1]
+        st.info(f"Latest voltage reading: {latest_reading['Voltage']:.2f}V at {latest_reading['created_at'].strftime('%Y-%m-%d %H:%M:%S')} UTC")
     else:
         st.warning("No battery data available to plot for the selected date range.")
 else:
-    st.info("Please select a date range and click 'Apply Custom Range' or click 'Show Today's Data' to view the battery status.")
+    st.info("Please select a date range and click 'Apply Custom Range' or click 'Show Recent Data' to view the battery status.")
 
 # Set first_load to False after the first execution
 st.session_state.first_load = False
