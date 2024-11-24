@@ -67,7 +67,9 @@ def load_boat_positions(start_date, end_date):
         response = supabase.fetch_boat_positions()
         df = pd.DataFrame(response)
         df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
-        return df[(df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)]
+        # Convert the datetime column to date for comparison
+        mask = (df['created_at'].dt.date >= start_date) & (df['created_at'].dt.date <= end_date)
+        return df[mask]
     except Exception as e:
         st.error(f"Error fetching boat positions: {str(e)}")
         return pd.DataFrame()
