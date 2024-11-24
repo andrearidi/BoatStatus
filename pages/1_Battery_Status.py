@@ -71,7 +71,8 @@ def load_battery_data(start_date, end_date):
     try:
         response = supabase.fetch_battery_data()
         df = pd.DataFrame(response)
-        df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
+        # Use format='ISO8601' to handle the datetime format from Supabase
+        df['created_at'] = pd.to_datetime(df['created_at'], format='ISO8601', utc=True)
         return df[(df['created_at'] >= start_date) & (df['created_at'] <= end_date)]
     except Exception as e:
         st.error(f"Error fetching battery data: {str(e)}")
